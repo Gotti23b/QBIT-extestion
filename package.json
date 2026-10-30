@@ -33,8 +33,7 @@
       "qbit-icon.svg",
       "windows/electron/**/*",
       "windows/scripts/**/*",
-      "package.json",
-      "!node_modules/**/*"
+      "package.json"
     ],
     "win": {
       "target": [
