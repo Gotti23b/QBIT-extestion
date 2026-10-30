@@ -443,7 +443,7 @@
     const found=commands.filter(c=>{const trigger=normalizeText(c.trigger_text);return trigger&&(" "+n+" ").includes(" "+trigger+" ");}).sort((a,b)=>normalizeText(b.trigger_text).length-normalizeText(a.trigger_text).length)[0];
     const activeResponses=found?responses.filter(x=>x.command_id===found.id&&x.is_active):[];
     if(!found||!activeResponses.length){
-      if(window.qbitPC?.isDesktop){try{const result=await window.qbitPC.askBrowserAI(q);bubble("QBIT",result.answer||"La IA no devolvió una respuesta.","bot");}catch(error){bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}
+      if(window.qbitPC?.isDesktop){const waiting=node("div","bubble bot");waiting.append(node("small","","QBIT"),document.createTextNode("Consultando la IA del navegador…"));$("chatbox").append(waiting);$("chatbox").scrollTop=$("chatbox").scrollHeight;try{const result=await window.qbitPC.askBrowserAI(q);waiting.remove();bubble("QBIT",result.answer||"La IA no devolvió una respuesta.","bot");}catch(error){waiting.remove();bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}
       else bubble("QBIT",found?"Encontré el comando, pero no tiene respuestas activas.":"Todavía no tengo una respuesta para eso. Podés agregar el comando desde el panel de administración.","bot");
       return;
     }
