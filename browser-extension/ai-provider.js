@@ -49,19 +49,25 @@
     editor.focus();
     if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
       const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(proto, "value").set.call(editor, text);
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (!setter) throw new Error("No pude escribir en el cuadro de mensaje.");
+      setter.call(editor, String(text));
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(text) }));
+      editor.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
+      editor.focus();
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(editor);
       selection.removeAllRanges();
       selection.addRange(range);
+      document.execCommand("delete");
       const lines = String(text).split("\n");
       for (let i = 0; i < lines.length; i++) {
         if (lines[i]) document.execCommand("insertText", false, lines[i]);
         if (i < lines.length - 1) document.execCommand("insertLineBreak");
       }
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(text) }));
     }
   }
   function isGenerating() {
@@ -78,24 +84,37 @@
     setEditor(editor, message);
     await sleep(250);
     const readyStarted = Date.now();
-    let send = document.querySelector(sendButtons[provider]);
-    while (send && (send.disabled || send.getAttribute("aria-disabled") === "true") && Date.now() - readyStarted < 5000) {
+    const findSendButton = () => [...document.querySelectorAll(sendButtons[provider])]
+      .find(button => button && button.getClientRects().length && !button.disabled && button.getAttribute("aria-disabled") !== "true");
+    let send = findSendButton();
+    while (!send && Date.now() - readyStarted < 5000) {
       await sleep(100);
-      send = document.querySelector(sendButtons[provider]);
+      send = findSendButton();
     }
-    if (send && !send.disabled && send.getAttribute("aria-disabled") !== "true") send.click();
-    else editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+    if (send) {
+      send.click();
+    } else {
+      editor.focus();
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+    }
 
     const startedAt = Date.now();
     let answer = "";
     let changedAt = 0;
+    let generationObserved = false;
     while (Date.now() - startedAt < 120000) {
       await sleep(350);
       const nodes = getReplies();
-      const current = (nodes.at(-1)?.innerText || nodes.at(-1)?.textContent || "").trim();
+      const last = nodes.at(-1);
+      const content = provider === "ChatGPT" ? (last?.querySelector(".markdown") || last) : last;
+      const current = (content?.innerText || content?.textContent || "").trim();
+      if (isGenerating()) generationObserved = true;
       if (current && (current !== previous || nodes.length > previousCount)) {
         if (current !== answer) { answer = current; changedAt = Date.now(); }
-        if (!isGenerating() && Date.now() - changedAt >= 1400) return { ok: true, answer, provider };
+        if (!isGenerating() && Date.now() - changedAt >= 1400 && (generationObserved || Date.now() - startedAt >= 2500)) {
+          return { ok: true, answer, provider };
+        }
       }
     }
     throw new Error(answer ? `${provider} no terminó de responder en dos minutos.` : `${provider} no generó una respuesta.`);
