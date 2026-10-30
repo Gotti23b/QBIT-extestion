@@ -5,7 +5,8 @@
   "description": "Conecta QBIT Desktop con pestañas de IA abiertas en Chrome.",
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
