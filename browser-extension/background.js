@@ -40,9 +40,12 @@ function connectConsole() {
       return;
     }
     if (message.type === "dispatch_ai") {
-      runAI(message.message, message.provider || "auto")
-        .then(result => socket?.readyState === WebSocket.OPEN && socket.send(JSON.stringify({ type: "ai_result", id: message.id, ok: true, answer: result.answer, provider: result.provider })))
-        .catch(error => socket?.readyState === WebSocket.OPEN && socket.send(JSON.stringify({ type: "ai_result", id: message.id, ok: false, error: error?.message || String(error) })));
+      chrome.storage.local.get({ provider: "auto" }, settings => {
+        const selected = settings.provider && settings.provider !== "auto" ? String(settings.provider).toLowerCase() : (message.provider || "auto");
+        runAI(message.message, selected)
+          .then(result => socket?.readyState === WebSocket.OPEN && socket.send(JSON.stringify({ type: "ai_result", id: message.id, ok: true, answer: result.answer, provider: result.provider })))
+          .catch(error => socket?.readyState === WebSocket.OPEN && socket.send(JSON.stringify({ type: "ai_result", id: message.id, ok: false, error: error?.message || String(error) })));
+      });
     }
   };
   socket.onclose = () => { socket = null; rejectWaiting("QBIT Console se desconectó."); broadcastConsoleStatus(); scheduleReconnect(); };
