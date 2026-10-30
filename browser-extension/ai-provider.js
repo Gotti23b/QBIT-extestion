@@ -32,13 +32,18 @@
   };
 
   function getReplies() {
+    // ChatGPT exposes both the assistant message and its nested markdown block.
+    // Read only the outer message so one answer is never counted twice.
+    if (provider === "ChatGPT") return [...document.querySelectorAll('[data-message-author-role="assistant"]')];
     const nodes = [...document.querySelectorAll(replies[provider])];
     if (provider === "Arena.ai") return nodes.filter(node => !node.closest(".justify-end")).reverse();
     return nodes;
   }
   function replyText() {
     const nodes = getReplies();
-    return (nodes.at(-1)?.innerText || nodes.at(-1)?.textContent || "").trim();
+    const last = nodes.at(-1);
+    const content = provider === "ChatGPT" ? (last?.querySelector(".markdown") || last) : last;
+    return (content?.innerText || content?.textContent || "").trim();
   }
   function setEditor(editor, text) {
     editor.focus();
