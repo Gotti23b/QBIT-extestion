@@ -1,5 +1,9 @@
 name: Build QBIT Desktop for Windows
 on:
+  push:
+    branches: [integrated-windows-installer]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
