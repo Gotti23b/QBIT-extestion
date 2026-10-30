@@ -86,14 +86,31 @@ async function sendConsolePrompt(message) {
   });
 }
 
+async function sendPromptToTab(tabId, payload) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, payload);
+  } catch (error) {
+    const reason = String(error?.message || error);
+    if (!/receiving end does not exist|could not establish connection|no receiver/i.test(reason)) throw error;
+
+    // La pestaña puede estar abierta desde antes de instalar/recargar la extensión.
+    // Inyectamos el receptor bajo demanda y volvemos a intentar el envío.
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["ai-provider.js"] });
+    await new Promise(resolve => setTimeout(resolve, 250));
+    return await chrome.tabs.sendMessage(tabId, payload);
+  }
+}
+
 async function runAI(message, requestedProvider) {
   const providerKey = String(requestedProvider || "auto").toLowerCase();
   const urlPatterns = providerKey === "auto" ? Object.values(PROVIDERS).flat() : PROVIDERS[providerKey];
   if (!urlPatterns) throw new Error("No reconozco ese proveedor de IA.");
   const tabs = await chrome.tabs.query({ url: urlPatterns });
-  if (!tabs.length) throw new Error("Abrí e iniciá sesión en una pestaña de ChatGPT o Arena.ai. También podés usar Gemini, Claude, DeepSeek, Qwen o Meta AI.");
+  if (!tabs.length) throw new Error("Abrí una pestaña de ChatGPT, Arena.ai, Gemini, Claude, DeepSeek, Qwen o Meta AI.");
   const tab = tabs.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
-  const result = await chrome.tabs.sendMessage(tab.id, { type: "QBIT_AI_PROMPT", message: String(message || "").slice(0, 12000) });
+  if (!Number.isInteger(tab.id)) throw new Error("No pude identificar la pestaña de IA.");
+  const payload = { type: "QBIT_AI_PROMPT", message: String(message || "").slice(0, 12000) };
+  const result = await sendPromptToTab(tab.id, payload);
   if (!result?.ok) throw new Error(result?.error || "La IA no devolvió una respuesta.");
   return result;
 }
