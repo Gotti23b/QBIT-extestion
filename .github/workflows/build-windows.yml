@@ -1,0 +1,32 @@
+name: Build QBIT Desktop for Windows
+on:
+  push:
+    branches: [integrated-windows-installer]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Deliberately omit cache: npm because this repo has no lockfile.
+      - run: npm install
+      - name: Generate Windows icon
+        run: node windows/scripts/create-windows-icon.cjs
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Build NSIS installer
+        run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QBIT-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
