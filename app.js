@@ -441,10 +441,14 @@
     if(mathAnswer!==null){bubble("QBIT",mathAnswer,"bot");return;}
     const n=normalizeText(q);
     const found=commands.filter(c=>{const trigger=normalizeText(c.trigger_text);return trigger&&(" "+n+" ").includes(" "+trigger+" ");}).sort((a,b)=>normalizeText(b.trigger_text).length-normalizeText(a.trigger_text).length)[0];
-    if(!found){if(window.qbitPC?.isDesktop){try{const result=await window.qbitPC.askBrowserAI(q);bubble("QBIT",result.answer||"La IA no devolvió una respuesta.","bot");}catch(error){bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}else bubble("QBIT","Todavía no tengo una respuesta para eso. Podés agregar el comando desde el panel de administración.","bot");return;}
-    const activeResponses=responses.filter(x=>x.command_id===found.id&&x.is_active);
-    const r=activeResponses.length?activeResponses[Math.floor(Math.random()*activeResponses.length)]:null;
-    bubble("QBIT",r?r.content:"Encontré el comando, pero todavía no tiene respuestas activas.","bot");
+    const activeResponses=found?responses.filter(x=>x.command_id===found.id&&x.is_active):[];
+    if(!found||!activeResponses.length){
+      if(window.qbitPC?.isDesktop){try{const result=await window.qbitPC.askBrowserAI(q);bubble("QBIT",result.answer||"La IA no devolvió una respuesta.","bot");}catch(error){bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}
+      else bubble("QBIT",found?"Encontré el comando, pero no tiene respuestas activas.":"Todavía no tengo una respuesta para eso. Podés agregar el comando desde el panel de administración.","bot");
+      return;
+    }
+    const r=activeResponses[Math.floor(Math.random()*activeResponses.length)];
+    bubble("QBIT",r.content,"bot");
   };
   window.qbitPC?.onPetMessage?.(message=>{const input=$("chatInput");if(!input)return;petMessagePending=true;input.value=String(message||"").slice(0,500);$("sendForm").requestSubmit();});
   $("clearChat").onclick=()=>newChat();
