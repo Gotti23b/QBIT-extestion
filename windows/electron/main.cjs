@@ -120,15 +120,18 @@ function runWindowsCommand(file, args, timeout = 8000) {
   });
 }
 
-function createWindow() {
+function createWindow(show = true) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
+    if (show) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
     return;
   }
   mainWindow = new BrowserWindow({
     width: 1180, height: 820, minWidth: 760, minHeight: 560,
     backgroundColor: "#07111f", title: "QBIT — Asistente personal",
+    show: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -146,6 +149,7 @@ function createWindow() {
   });
   mainWindow.on("closed", () => { mainWindow = null; });
   mainWindow.loadFile(path.join(getAppRoot(), "index.html"));
+  if (show) mainWindow.once("ready-to-show", () => mainWindow?.show());
 }
 
 function workAreaForPoint(x, y) {
@@ -436,12 +440,14 @@ ipcMain.handle("qbit:pet-send-message", (event, rawText) => {
   if (!petWindow || event.sender !== petWindow.webContents) return false;
   if (typeof rawText !== "string" || !rawText.trim() || rawText.length > 500) throw new Error("El mensaje no es válido.");
   const message = rawText.trim();
-  // La mascota usa el renderer principal en segundo plano; no mostrar ni enfocar la ventana.
-  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  // La mascota usa el renderer principal oculto; nunca mostrarlo ni enfocarlo.
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow(false);
+  const target = mainWindow;
+  if (!target || target.isDestroyed()) return false;
   const deliver = () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("qbit:pet-message", message);
+    if (mainWindow === target && !target.isDestroyed()) target.webContents.send("qbit:pet-message", message);
   };
-  if (mainWindow.webContents.isLoading()) mainWindow.webContents.once("did-finish-load", deliver);
+  if (target.webContents.isLoading()) target.webContents.once("did-finish-load", deliver);
   else deliver();
   return true;
 });
@@ -539,7 +545,7 @@ ipcMain.handle("qbit:automation", async (_event, taskName) => {
 app.whenReady().then(() => {
   loadPetSettings();
   createTray();
-  createWindow();
+  createWindow(false);
   createPetWindow();
   setupAutoUpdater();
 });
