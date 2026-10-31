@@ -68,6 +68,31 @@
       if(!result.matches?.length)return {ok:true,message:"No encontré archivos con ese nombre."};
       return {ok:true,message:"Archivos encontrados:\n"+result.matches.map(x=>"• "+x.name+" (carpeta: "+x.folder+")").join("\n")};
     }
+    if(name==="empty_recycle_bin")return await pc.emptyRecycleBin();
+    if(name==="get_processes")return await pc.getProcesses();
+    if(name==="cpu_usage")return await pc.getCpuUsage();
+    if(name==="ram_usage")return await pc.getRamUsage();
+    if(name==="disk_usage")return await pc.getDiskUsage();
+    if(name==="toggle_night_light")return await pc.openNightLightSettings();
+    if(name==="toggle_wifi")return await pc.toggleWifi(args.action);
+    if(name==="minimize_all")return await pc.minimizeAll();
+    if(name==="restore_all")return await pc.restoreAll();
+    if(name==="focus_app")return await pc.focusApp(String(args.query||""));
+    if(name==="close_window")return await pc.closeWindow(String(args.query||""));
+    if(name==="open_file_location")return await pc.openFileLocation(String(args.query||""));
+    if(name==="get_file_info")return await pc.getFileInfo(String(args.query||""));
+    if(name==="zip_files")return await pc.zipFile(String(args.query||""));
+    if(name==="unzip_file")return await pc.unzipFile(String(args.query||""));
+    if(name==="read_text_file")return await pc.readTextFile(String(args.query||""));
+    if(name==="show_notification")return await pc.showNotification(String(args.title||"QBIT"),String(args.message||""));
+    if(name==="set_timer")return await pc.setTimer(Number(args.seconds),String(args.label||"Temporizador"));
+    if(name==="cancel_timer")return await pc.cancelTimer(String(args.id||"default"));
+    if(name==="open_calculator")return await pc.openApp("calculadora");
+    if(name==="open_notepad")return await pc.openApp("bloc de notas");
+    if(name==="open_task_manager")return await pc.openApp("administrador de tareas");
+    if(name==="volume_info")return await pc.getAudioDevices();
+    if(name==="volume_set"){const level=Number(args.level);if(!Number.isInteger(level)||level<0||level>100)throw new Error("El volumen debe ser un entero entre 0 y 100.");return await pc.volume("set",level);}
+    if(name==="audio_mute")return await pc.volume("mute");
     if(name==="clipboard_write")return await pc.writeClipboard(String(args.text??""));
 
     throw new Error("Artifact desconocido o no habilitado: "+name);
@@ -94,16 +119,41 @@
     create_folder:"crear una carpeta en Documentos, Descargas o Escritorio",
     create_file:"crear un archivo de texto en Documentos, Descargas o Escritorio",
     search_files:"buscar archivos por nombre",
-    clipboard_write:"copiar texto al portapapeles"
+    clipboard_write:"copiar texto al portapapeles",
+    empty_recycle_bin:"vaciar la Papelera de reciclaje (acción irreversible)",
+    get_processes:"consultar los procesos activos",
+    cpu_usage:"consultar el uso del procesador",
+    ram_usage:"consultar el uso de memoria RAM",
+    disk_usage:"consultar el espacio de los discos",
+    toggle_night_light:"abrir la configuración de Luz nocturna de Windows",
+    toggle_wifi:"activar o desactivar el Wi-Fi",
+    minimize_all:"minimizar todas las ventanas",
+    restore_all:"restaurar las ventanas minimizadas",
+    focus_app:"llevar una aplicación abierta al frente",
+    close_window:"cerrar una aplicación abierta",
+    open_file_location:"mostrar un archivo en su carpeta",
+    get_file_info:"consultar información de un archivo",
+    zip_files:"comprimir un archivo en ZIP",
+    unzip_file:"extraer un archivo ZIP",
+    read_text_file:"leer un archivo de texto",
+    show_notification:"mostrar una notificación de Windows",
+    set_timer:"crear un temporizador",
+    cancel_timer:"cancelar un temporizador",
+    open_calculator:"abrir la Calculadora",
+    open_notepad:"abrir el Bloc de notas",
+    open_task_manager:"abrir el Administrador de tareas",
+    volume_info:"consultar los dispositivos de audio detectados",
+    volume_set:"establecer el volumen",
+    audio_mute:"silenciar el audio",
   };
-  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date","battery_info","network_info","display_info","brightness_info"]);
+  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date","battery_info","network_info","display_info","brightness_info","get_processes","cpu_usage","ram_usage","disk_usage","volume_info"]);
   let aiGuideSent=false;
   function aiGuide(){
     return "[Instrucciones de QBIT — leelas y respondé solo al mensaje del usuario]\n"+
       "Estás respondiendo a través de QBIT, un asistente de escritorio para Windows. Respondé en español.\n"+
       "Si el usuario te pide una acción en su PC, agregá al final un bloque de código con lenguaje qbit y un JSON, por ejemplo:\n"+
       "```qbit\n{\"artifact\":\"volume\",\"args\":{\"action\":\"up\"}}\n```\n"+
-      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; brightness_info {}; brightness_set {\"level\":0-100}; brightness_up {}; brightness_down {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}.\n"+
+      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; brightness_info {}; brightness_set {\"level\":0-100}; brightness_up {}; brightness_down {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}; empty_recycle_bin {}; get_processes {}; cpu_usage {}; ram_usage {}; disk_usage {}; toggle_night_light {}; toggle_wifi {\"action\":\"on|off\"}; minimize_all {}; restore_all {}; focus_app {\"query\":\"nombre de aplicación\"}; close_window {\"query\":\"nombre de aplicación\"}; open_file_location {\"query\":\"nombre de archivo\"}; get_file_info {\"query\":\"nombre de archivo\"}; zip_files {\"query\":\"nombre de archivo\"}; unzip_file {\"query\":\"archivo ZIP\"}; read_text_file {\"query\":\"archivo de texto\"}; show_notification {\"title\":\"Título\",\"message\":\"Texto\"}; set_timer {\"seconds\":60,\"label\":\"Descanso\"}; cancel_timer {\"id\":\"default\"}; open_calculator {}; open_notepad {}; open_task_manager {}; volume_info {}; volume_set {\"level\":0-100}; audio_mute {}.\n"+
 
       "El bloque tiene que empezar exactamente con ```qbit. Usá como máximo uno por respuesta y solo si el usuario lo pidió.\n\nMensaje del usuario:\n";
   }
