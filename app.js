@@ -51,7 +51,8 @@
     if(name==="display_info")return await pc.getDisplayInfo();
     if(name==="brightness_info")return await pc.getBrightnessInfo();
     if(name==="brightness_set"){
-      const level=Number(args.level);
+      const rawLevel=args.level&&typeof args.level==="object"?(args.level.level??args.level.value):args.level;
+      const level=Number(rawLevel);
       if(!Number.isInteger(level)||level<0||level>100)throw new Error("El brillo tiene que ser un número entero entre 0 y 100.");
       return await pc.setBrightness(level);
     }
@@ -209,7 +210,7 @@
   setTimeout(renderAllowSettings,0);
   async function runArtifactBlock(json){
     let call;try{call=JSON.parse(json);}catch{return "La IA mandó un bloque qbit que no es JSON válido.";}
-    const name=String(call?.artifact||"");const args=call?.args&&typeof call.args==="object"?{...call.args}:{};
+    const name=String(call?.artifact||"");const args=call?.args&&typeof call.args==="object"?{...call.args}:Object.fromEntries(Object.entries(call||{}).filter(([key])=>key!=="artifact"));
     delete args.__allowed;
     if(!AI_ARTIFACTS[name])return "La IA pidió un artifact que no existe: "+name;
     if(!AI_ARTIFACTS_NO_CONFIRM.has(name)&&!loadAlwaysAllow().has(name)){
@@ -650,7 +651,7 @@
     const found=commands.filter(c=>{const trigger=normalizeText(c.trigger_text);return trigger&&(" "+n+" ").includes(" "+trigger+" ");}).sort((a,b)=>normalizeText(b.trigger_text).length-normalizeText(a.trigger_text).length)[0];
     const activeResponses=found?responses.filter(x=>x.command_id===found.id&&x.is_active):[];
     if(!found||!activeResponses.length){
-      if(window.qbitPC?.isDesktop){const waiting=node("div","bubble bot");waiting.append(node("small","","QBIT"),document.createTextNode("Consultando la IA del navegador…"));$("chatbox").append(waiting);$("chatbox").scrollTop=$("chatbox").scrollHeight;try{const prompt=aiGuideSent?q:aiGuide()+q;const result=await window.qbitPC.askBrowserAI(prompt);aiGuideSent=true;waiting.remove();const {clean,calls}=extractArtifactBlocks(result.answer||"");if(clean||!calls.length)bubble("QBIT",clean||"La IA no devolvió una respuesta.","bot");for(const call of calls)bubble("QBIT",await runArtifactBlock(call),"bot");}catch(error){waiting.remove();bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}
+      if(window.qbitPC?.isDesktop){const waiting=node("div","bubble bot");waiting.append(node("small","","QBIT"),document.createTextNode("Consultando la IA del navegador…"));$("chatbox").append(waiting);$("chatbox").scrollTop=$("chatbox").scrollHeight;try{const prompt=aiGuideSent?q:aiGuide()+q;const result=await window.qbitPC.askBrowserAI(prompt);aiGuideSent=true;const providerLabel=$("activeProvider");if(providerLabel&&result.provider){providerLabel.textContent="· "+String(result.provider);providerLabel.classList.remove("hidden");}waiting.remove();const {clean,calls}=extractArtifactBlocks(result.answer||"");if(clean||!calls.length)bubble("QBIT",clean||"La IA no devolvió una respuesta.","bot");for(const call of calls)bubble("QBIT",await runArtifactBlock(call),"bot");}catch(error){waiting.remove();bubble("QBIT","No encontré una respuesta guardada y no pude consultar la IA: "+(error?.message||"conector desconectado")+". Revisá la pestaña Conector. 🔌","bot");}}
       else bubble("QBIT",found?"Encontré el comando, pero no tiene respuestas activas.":"Todavía no tengo una respuesta para eso. Podés agregar el comando desde el panel de administración.","bot");
       return;
     }
