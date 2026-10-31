@@ -620,7 +620,7 @@ ipcMain.handle("qbit:display-info", async () => {
 ipcMain.handle("qbit:brightness-info", async () => {
   const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  if (!/^\\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo. Puede pasar con monitores externos o con un controlador de pantalla básico." };
+  if (!/^\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo. Puede pasar con monitores externos o con un controlador de pantalla básico." };
   return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
 });
 ipcMain.handle("qbit:brightness-set", async (_event, level) => {
@@ -637,7 +637,7 @@ ipcMain.handle("qbit:brightness-adjust", async (_event, delta) => {
   if (![10, -10].includes(step)) throw new Error("Ajuste de brillo no permitido.");
   const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  if (!/^\\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo." };
+  if (!/^\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo." };
   const target = Math.max(0, Math.min(100, Number(raw.trim()) + step));
   const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction Stop; if($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
   const result = (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
