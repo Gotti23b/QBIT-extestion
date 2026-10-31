@@ -1,6 +1,6 @@
 {
   "name": "qbit-desktop",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "QBIT Desktop 1.4 con sistema ampliado de Artifacts para Windows",
   "private": true,
   "main": "windows/electron/main.cjs",
