@@ -41,7 +41,7 @@
       return {ok:true,message:"Son las "+new Intl.DateTimeFormat("es-AR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now)+". Hoy es "+new Intl.DateTimeFormat("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(now)+"."};
     }
     if(name==="automation"){
-      if(!window.confirm("Agent quiere preparar el entorno de estudio: abrir Calculadora, Bloc de notas y Documentos. ¿Continuar?"))return {ok:true,message:"Cancelaste la automatización. No se realizaron cambios."};
+      if(!args.__allowed&&!window.confirm("Agent quiere preparar el entorno de estudio: abrir Calculadora, Bloc de notas y Documentos. ¿Continuar?"))return {ok:true,message:"Cancelaste la automatización. No se realizaron cambios."};
       return await pc.runAutomation("study");
     }
     throw new Error("Artifact desconocido o no habilitado: "+name);
@@ -74,14 +74,53 @@
     }).replace(/\n{3,}/g,"\n\n").trim();
     return {clean,calls:calls.slice(0,3)};
   }
+  // ── Permisos de las acciones de la IA ("Permitir siempre") ────────────────
+  // Se guardan en esta PC. Se cambian desde la pestaña Conector.
+  const ALLOW_KEY="qbit-ai-always-allow";
+  let allowMemory=null; // respaldo por si el almacenamiento no está disponible
+  function loadAlwaysAllow(){try{const v=JSON.parse(localStorage.getItem(ALLOW_KEY)||"[]");return new Set(Array.isArray(v)?v.filter(n=>AI_ARTIFACTS[n]):[]);}catch{return new Set(allowMemory||[]);}}
+  function saveAlwaysAllow(set){allowMemory=[...set];try{localStorage.setItem(ALLOW_KEY,JSON.stringify(allowMemory));}catch{}renderAllowSettings();}
+  function setAlwaysAllow(name,on){const set=loadAlwaysAllow();on?set.add(name):set.delete(name);saveAlwaysAllow(set);}
+  // Ventana propia con tres opciones (window.confirm solo tiene Aceptar/Cancelar).
+  function askPermission(name,detail){
+    return new Promise(resolve=>{
+      const overlay=node("div","qbit-modal-overlay");const box=node("div","qbit-modal card");
+      box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
+      box.append(node("h3","","La IA quiere hacer algo en tu PC"),node("p","","Quiere "+AI_ARTIFACTS[name]+detail+"."));
+      const actions=node("div","qbit-modal-actions");
+      const done=v=>{overlay.remove();document.removeEventListener("keydown",onKey);resolve(v);};
+      const onKey=e=>{if(e.key==="Escape")done("deny");};
+      actions.append(btn("No","",()=>done("deny")),btn("Permitir siempre","",()=>done("always")),btn("Permitir una vez","primary",()=>done("once")));
+      box.append(actions,node("p","muted small-note","«Permitir siempre» se puede desactivar en la pestaña 🔌 Conector."));
+      overlay.append(box);document.body.append(overlay);document.addEventListener("keydown",onKey);
+      actions.lastChild.focus();
+    });
+  }
+  function renderAllowSettings(){
+    const list=document.getElementById("aiAllowList");if(!list)return;
+    const allowed=loadAlwaysAllow();list.replaceChildren();
+    for(const [name,label] of Object.entries(AI_ARTIFACTS)){
+      if(AI_ARTIFACTS_NO_CONFIRM.has(name))continue;
+      const row=node("label","allow-row");const input=document.createElement("input");input.type="checkbox";input.className="switch";input.checked=allowed.has(name);
+      input.addEventListener("change",()=>setAlwaysAllow(name,input.checked));
+      row.append(input,node("span","",label.charAt(0).toUpperCase()+label.slice(1)));list.append(row);
+    }
+    const all=document.getElementById("aiAllowAll");
+    if(all){const total=Object.keys(AI_ARTIFACTS).filter(n=>!AI_ARTIFACTS_NO_CONFIRM.has(n)).length;all.textContent=allowed.size?"Volver a preguntar siempre":"Permitir todas";all.onclick=()=>{const set=new Set();if(!allowed.size)Object.keys(AI_ARTIFACTS).filter(n=>!AI_ARTIFACTS_NO_CONFIRM.has(n)).forEach(n=>set.add(n));saveAlwaysAllow(set);};}
+  }
+  setTimeout(renderAllowSettings,0);
   async function runArtifactBlock(json){
     let call;try{call=JSON.parse(json);}catch{return "La IA mandó un bloque qbit que no es JSON válido.";}
-    const name=String(call?.artifact||"");const args=call?.args&&typeof call.args==="object"?call.args:{};
+    const name=String(call?.artifact||"");const args=call?.args&&typeof call.args==="object"?{...call.args}:{};
+    delete args.__allowed;
     if(!AI_ARTIFACTS[name])return "La IA pidió un artifact que no existe: "+name;
-    if(!AI_ARTIFACTS_NO_CONFIRM.has(name)&&name!=="automation"){
+    if(!AI_ARTIFACTS_NO_CONFIRM.has(name)&&!loadAlwaysAllow().has(name)){
       const detail=args.query?" (\""+String(args.query).slice(0,80)+"\")":args.action==="set"?" al "+args.level+"%":args.action?" ("+args.action+")":"";
-      if(!window.confirm("La IA quiere "+AI_ARTIFACTS[name]+detail+". ¿Lo permitís?"))return "Cancelaste el artifact "+name+".";
+      const answer=await askPermission(name,detail);
+      if(answer==="deny")return "Cancelaste el artifact "+name+".";
+      if(answer==="always")setAlwaysAllow(name,true);
     }
+    args.__allowed=true;
     try{const r=await executeDesktopArtifact(name,args);return r?.message||("Artifact "+name+" ejecutado.");}
     catch(e){return "No pude ejecutar "+name+": "+(e?.message||e);}
   }
