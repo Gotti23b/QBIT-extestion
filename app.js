@@ -49,6 +49,14 @@
     if(name==="battery_info")return await pc.getBatteryInfo();
     if(name==="network_info")return await pc.getNetworkInfo();
     if(name==="display_info")return await pc.getDisplayInfo();
+    if(name==="brightness_info")return await pc.getBrightnessInfo();
+    if(name==="brightness_set"){
+      const level=Number(args.level);
+      if(!Number.isInteger(level)||level<0||level>100)throw new Error("El brillo tiene que ser un número entero entre 0 y 100.");
+      return await pc.setBrightness(level);
+    }
+    if(name==="brightness_up")return await pc.adjustBrightness(10);
+    if(name==="brightness_down")return await pc.adjustBrightness(-10);
     if(name==="media_control"){
       if(!["play_pause","next","previous","stop"].includes(args.action))throw new Error("Acción multimedia no válida.");
       return await pc.mediaControl(args.action);
@@ -78,20 +86,24 @@
     battery_info:"consultar el estado de la batería",
     network_info:"consultar las conexiones de red activas",
     display_info:"consultar las pantallas conectadas",
+    brightness_info:"consultar el nivel de brillo de la pantalla",
+    brightness_set:"establecer el brillo de la pantalla",
+    brightness_up:"subir el brillo de la pantalla",
+    brightness_down:"bajar el brillo de la pantalla",
     media_control:"controlar la reproducción multimedia",
     create_folder:"crear una carpeta en Documentos, Descargas o Escritorio",
     create_file:"crear un archivo de texto en Documentos, Descargas o Escritorio",
     search_files:"buscar archivos por nombre",
     clipboard_write:"copiar texto al portapapeles"
   };
-  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date","battery_info","network_info","display_info"]);
+  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date","battery_info","network_info","display_info","brightness_info"]);
   let aiGuideSent=false;
   function aiGuide(){
     return "[Instrucciones de QBIT — leelas y respondé solo al mensaje del usuario]\n"+
       "Estás respondiendo a través de QBIT, un asistente de escritorio para Windows. Respondé en español.\n"+
       "Si el usuario te pide una acción en su PC, agregá al final un bloque de código con lenguaje qbit y un JSON, por ejemplo:\n"+
       "```qbit\n{\"artifact\":\"volume\",\"args\":{\"action\":\"up\"}}\n```\n"+
-      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}.\n"+
+      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; brightness_info {}; brightness_set {"level":0-100}; brightness_up {}; brightness_down {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}.\n"+
 
       "El bloque tiene que empezar exactamente con ```qbit. Usá como máximo uno por respuesta y solo si el usuario lo pidió.\n\nMensaje del usuario:\n";
   }
