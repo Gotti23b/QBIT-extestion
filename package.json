@@ -1,7 +1,7 @@
 {
   "name": "qbit-desktop",
-  "version": "1.4.4",
-  "description": "QBIT Desktop 1.4.4 con control de brillo y sistema ampliado de Artifacts para Windows",
+  "version": "1.4.5",
+  "description": "QBIT Desktop 1.4.5 con nuevos Artifacts de Windows, archivos, ventanas y productividad",
   "private": true,
   "main": "windows/electron/main.cjs",
   "scripts": {
