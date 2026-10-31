@@ -1,7 +1,7 @@
 {
   "name": "qbit-desktop",
-  "version": "1.4.5",
-  "description": "QBIT Desktop 1.4.5 con nuevos Artifacts de Windows, archivos, ventanas y productividad",
+  "version": "1.4.6",
+  "description": "QBIT Desktop 1.4.6 con correcciones de Wi-Fi y brillo",
   "private": true,
   "main": "windows/electron/main.cjs",
   "scripts": {
