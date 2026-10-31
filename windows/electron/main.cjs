@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, dialog, clipboard } = require("electron");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -532,6 +532,95 @@ ipcMain.handle("qbit:volume", async (_event, action, level) => {
   const script = "$src = 'using System; using System.Runtime.InteropServices; public static class QbitNativeKeys { [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo); }'; Add-Type -TypeDefinition $src; [QbitNativeKeys]::keybd_event(" + virtualKey + ",0,0,0); [QbitNativeKeys]::keybd_event(" + virtualKey + ",0,2,0)";
   await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script]);
   return { ok: true, message: action === "up" ? "Subiendo el volumen." : action === "down" ? "Bajando el volumen." : "Alternando silencio." };
+});
+
+
+const SETTINGS_PAGES = Object.freeze({
+  system: "ms-settings:",
+  display: "ms-settings:display",
+  sound: "ms-settings:sound",
+  network: "ms-settings:network",
+  wifi: "ms-settings:network-wifi",
+  bluetooth: "ms-settings:bluetooth",
+  apps: "ms-settings:appsfeatures",
+  personalization: "ms-settings:personalization",
+  updates: "ms-settings:windowsupdate",
+  storage: "ms-settings:storagesense",
+  notifications: "ms-settings:notifications",
+  privacy: "ms-settings:privacy"
+});
+ipcMain.handle("qbit:open-settings", async (_event, page) => {
+  const uri = SETTINGS_PAGES[String(page || "system").toLowerCase()];
+  if (!uri) throw new Error("Esa sección de Configuración no está habilitada.");
+  await shell.openExternal(uri);
+  return { ok: true, message: "Abriendo Configuración de Windows." };
+});
+ipcMain.handle("qbit:lock-pc", async () => {
+  await runWindowsCommand("rundll32.exe", ["user32.dll,LockWorkStation"], 5000);
+  return { ok: true, message: "Bloqueando la PC." };
+});
+ipcMain.handle("qbit:battery-info", async () => {
+  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "$b=Get-CimInstance Win32_Battery | Select-Object -First 1; if($null -eq $b){'null'}else{$b | Select-Object Name,Status,EstimatedChargeRemaining,BatteryStatus,EstimatedRunTime | ConvertTo-Json -Compress}"], 7000);
+  if (!raw || raw === "null") return { ok: true, message: "Windows no detecta una batería en este equipo." };
+  let b; try { b = JSON.parse(raw); } catch { throw new Error("No pude interpretar los datos de batería de Windows."); }
+  return { ok: true, message: "Batería: " + (b.EstimatedChargeRemaining ?? "desconocido") + "%\nEstado: " + (b.Status || "no disponible") + "\nTiempo estimado: " + (b.EstimatedRunTime && b.EstimatedRunTime < 71582788 ? b.EstimatedRunTime + " minutos" : "no disponible") };
+});
+ipcMain.handle("qbit:network-info", async () => {
+  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "Get-NetIPConfiguration | Where-Object {$_.NetAdapter.Status -eq 'Up'} | Select-Object InterfaceAlias,@{N='IPv4';E={$_.IPv4Address.IPAddress -join ', '}},@{N='Gateway';E={$_.IPv4DefaultGateway.NextHop -join ', '}} | ConvertTo-Json -Compress"], 9000);
+  if (!raw) return { ok: true, message: "Windows no informó conexiones de red activas." };
+  let rows; try { rows = JSON.parse(raw); } catch { throw new Error("No pude interpretar la información de red."); }
+  if (!Array.isArray(rows)) rows = [rows];
+  return { ok: true, message: "Conexiones activas:\n" + rows.map(x => "• " + (x.InterfaceAlias || "Adaptador") + " · IP: " + (x.IPv4 || "sin IPv4") + " · Puerta de enlace: " + (x.Gateway || "no disponible")).join("\n") };
+});
+ipcMain.handle("qbit:media-control", async (_event, action) => {
+  const keys = { play_pause: 0xB3, next: 0xB0, previous: 0xB1, stop: 0xB2 };
+  const key = keys[String(action || "")];
+  if (!key) throw new Error("Acción multimedia no permitida.");
+  const script = "$src='using System; using System.Runtime.InteropServices; public static class QbitMediaKey { [DllImport(\\\"user32.dll\\\")] public static extern void keybd_event(byte bVk,byte bScan,int dwFlags,int dwExtraInfo); }'; Add-Type -TypeDefinition $src; [QbitMediaKey]::keybd_event(" + key + ",0,0,0); [QbitMediaKey]::keybd_event(" + key + ",0,2,0)";
+  await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], 7000);
+  const labels = { play_pause: "Reproducir o pausar", next: "Siguiente pista", previous: "Pista anterior", stop: "Detener reproducción" };
+  return { ok: true, message: labels[action] + "." };
+});
+function resolveKnownUserPath(baseName, relativePath) {
+  const baseKey = String(baseName || "").toLowerCase();
+  const getBase = knownFolders[baseKey];
+  if (!getBase || !["documentos", "descargas", "escritorio"].includes(baseKey)) throw new Error("Elegí una carpeta permitida: documentos, descargas o escritorio.");
+  if (typeof relativePath !== "string" || !relativePath.trim() || relativePath.length > 220) throw new Error("La ruta relativa no es válida.");
+  if (path.isAbsolute(relativePath) || /^[a-z]:/i.test(relativePath) || relativePath.split(/[\\\\/]+/).some(part => part === ".." || part === ".")) throw new Error("Solo se permiten rutas dentro de la carpeta elegida.");
+  const base = path.resolve(getBase());
+  const target = path.resolve(base, relativePath);
+  if (!target.startsWith(base + path.sep)) throw new Error("La ruta sale de la carpeta permitida.");
+  return target;
+}
+ipcMain.handle("qbit:create-folder", async (_event, base, relativePath) => {
+  const target = resolveKnownUserPath(base, relativePath);
+  await fs.promises.mkdir(target, { recursive: true });
+  return { ok: true, message: "Carpeta creada: " + path.basename(target) + "." };
+});
+ipcMain.handle("qbit:create-file", async (_event, base, relativePath, content) => {
+  const target = resolveKnownUserPath(base, relativePath);
+  if (typeof content !== "string" || content.length > 20000) throw new Error("El contenido debe ser texto de hasta 20.000 caracteres.");
+  await fs.promises.mkdir(path.dirname(target), { recursive: true });
+  try { await fs.promises.writeFile(target, content, { encoding: "utf8", flag: "wx" }); }
+  catch (error) { if (error.code === "EEXIST") throw new Error("Ya existe un archivo con ese nombre. No lo sobrescribí."); throw error; }
+  return { ok: true, message: "Archivo creado: " + path.basename(target) + "." };
+});
+ipcMain.handle("qbit:search-files", async (_event, query) => {
+  if (typeof query !== "string" || !query.trim() || query.length > 100) throw new Error("Escribí un nombre para buscar.");
+  const matches = await findLocalMatches(query.trim());
+  return { ok: true, matches: matches.filter(x => x.kind === "file").slice(0, 12).map(x => ({ name: x.name, folder: path.basename(path.dirname(x.path)) })) };
+});
+ipcMain.handle("qbit:display-info", async () => {
+  const primary = screen.getPrimaryDisplay().id;
+  const displays = screen.getAllDisplays().map((d, i) => ({ index: i + 1, width: d.size.width, height: d.size.height, scale: d.scaleFactor, primary: d.id === primary }));
+  return { ok: true, message: "Pantallas detectadas:\n" + displays.map(d => "• Pantalla " + d.index + (d.primary ? " (principal)" : "") + ": " + d.width + " × " + d.height + " · escala " + d.scale + "×").join("\n") };
+});
+ipcMain.handle("qbit:clipboard-write", async (_event, value) => {
+  if (typeof value !== "string" || !value.length || value.length > 20000) throw new Error("El texto debe tener entre 1 y 20.000 caracteres.");
+  clipboard.writeText(value);
+  return { ok: true, message: "Texto copiado al portapapeles." };
 });
 
 ipcMain.handle("qbit:automation", async (_event, taskName) => {

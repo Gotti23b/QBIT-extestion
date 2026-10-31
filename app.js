@@ -44,19 +44,55 @@
       if(!args.__allowed&&!window.confirm("Agent quiere preparar el entorno de estudio: abrir Calculadora, Bloc de notas y Documentos. ¿Continuar?"))return {ok:true,message:"Cancelaste la automatización. No se realizaron cambios."};
       return await pc.runAutomation("study");
     }
+    if(name==="open_settings")return await pc.openSettings(String(args.page||"system"));
+    if(name==="lock_pc")return await pc.lockPC();
+    if(name==="battery_info")return await pc.getBatteryInfo();
+    if(name==="network_info")return await pc.getNetworkInfo();
+    if(name==="display_info")return await pc.getDisplayInfo();
+    if(name==="media_control"){
+      if(!["play_pause","next","previous","stop"].includes(args.action))throw new Error("Acción multimedia no válida.");
+      return await pc.mediaControl(args.action);
+    }
+    if(name==="create_folder")return await pc.createFolder(String(args.base||"documentos"),String(args.path||""));
+    if(name==="create_file")return await pc.createFile(String(args.base||"documentos"),String(args.path||""),String(args.content??""));
+    if(name==="search_files"){
+      const result=await pc.searchFiles(String(args.query||""));
+      if(!result.matches?.length)return {ok:true,message:"No encontré archivos con ese nombre."};
+      return {ok:true,message:"Archivos encontrados:\\n"+result.matches.map(x=>"• "+x.name+" (carpeta: "+x.folder+")").join("\\n")};
+    }
+    if(name==="clipboard_write")return await pc.writeClipboard(String(args.text??""));
+
     throw new Error("Artifact desconocido o no habilitado: "+name);
   }
   // ── Artifacts desde la IA del navegador ──────────────────────────────────
   // La IA puede pedir un artifact con un bloque:  ```qbit\n{"artifact":"volume","args":{"action":"up"}}\n```
-  const AI_ARTIFACTS={open_anything:"abrir una app, archivo, carpeta o sitio",system_info:"ver la información de la PC",volume:"cambiar el volumen",web_search:"buscar en Google",time_date:"decir la hora y la fecha",automation:"preparar el entorno de estudio"};
-  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date"]);
+  const AI_ARTIFACTS={
+    open_anything:"abrir una aplicación, archivo, carpeta o sitio",
+    system_info:"consultar información del equipo",
+    volume:"cambiar el volumen",
+    web_search:"buscar en Google",
+    time_date:"consultar la hora y la fecha",
+    automation:"preparar el entorno de estudio",
+    open_settings:"abrir una sección de Configuración de Windows",
+    lock_pc:"bloquear la PC",
+    battery_info:"consultar el estado de la batería",
+    network_info:"consultar las conexiones de red activas",
+    display_info:"consultar las pantallas conectadas",
+    media_control:"controlar la reproducción multimedia",
+    create_folder:"crear una carpeta en Documentos, Descargas o Escritorio",
+    create_file:"crear un archivo de texto en Documentos, Descargas o Escritorio",
+    search_files:"buscar archivos por nombre",
+    clipboard_write:"copiar texto al portapapeles"
+  };
+  const AI_ARTIFACTS_NO_CONFIRM=new Set(["system_info","time_date","battery_info","network_info","display_info"]);
   let aiGuideSent=false;
   function aiGuide(){
     return "[Instrucciones de QBIT — leelas y respondé solo al mensaje del usuario]\n"+
       "Estás respondiendo a través de QBIT, un asistente de escritorio para Windows. Respondé en español.\n"+
       "Si el usuario te pide una acción en su PC, agregá al final un bloque de código con lenguaje qbit y un JSON, por ejemplo:\n"+
       "```qbit\n{\"artifact\":\"volume\",\"args\":{\"action\":\"up\"}}\n```\n"+
-      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}, system_info {}, volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}, web_search {\"query\":\"texto\"}, time_date {}, automation {}.\n"+
+      "Artifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}.\n"+
+
       "El bloque tiene que empezar exactamente con ```qbit. Usá como máximo uno por respuesta y solo si el usuario lo pidió.\n\nMensaje del usuario:\n";
   }
   // Acepta ```qbit … ``` y también cualquier bloque cuyo contenido sea un JSON con "artifact"

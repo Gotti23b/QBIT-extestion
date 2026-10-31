@@ -1,7 +1,7 @@
 {
   "name": "qbit-desktop",
-  "version": "1.3.3",
-  "description": "QBIT Desktop con mascota mejorada y conector de IA del navegador",
+  "version": "1.4.0",
+  "description": "QBIT Desktop 1.4 con sistema ampliado de Artifacts para Windows",
   "private": true,
   "main": "windows/electron/main.cjs",
   "scripts": {
