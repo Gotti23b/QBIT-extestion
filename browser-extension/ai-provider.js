@@ -50,7 +50,7 @@
     return (content?.innerText || content?.textContent || "").trim();
   }
   function setEditor(editor, text) {
-    editor.focus();
+    // No enfocar el editor: focus() en una pestaña inactiva puede traer el chat de IA al frente.
     if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
       const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
@@ -59,7 +59,6 @@
       editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(text) }));
       editor.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
-      editor.focus();
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(editor);
@@ -176,7 +175,6 @@
     return false;
   }
   function pressEnter(editor) {
-    editor.focus();
     const init = { key: "Enter", code: "Enter", keyCode: 13, which: 13, charCode: 13, bubbles: true, cancelable: true, composed: true };
     editor.dispatchEvent(new KeyboardEvent("keydown", init));
     editor.dispatchEvent(new KeyboardEvent("keypress", init));
@@ -210,15 +208,15 @@
       () => { const b = findSendButton() || editor.closest("form")?.querySelector('button[type="submit"]:not([disabled])'); if (b) b.click(); else return false; },
       () => { const form = editor.closest("form"); if (form?.requestSubmit) form.requestSubmit(); else return false; },
       () => {
-        // Último botón habilitado cerca del cuadro de texto (suele ser la flecha de enviar).
+        // Último botón habilitado cerca del cuadro de texto; no usamos Enter
+        // porque requiere enfocar el editor y puede activar la pestaña.
         let box = editor.parentElement;
         for (let i = 0; i < 5 && box; i++, box = box.parentElement) {
           const buttons = [...box.querySelectorAll('button:not([disabled]):not([aria-disabled="true"])')].filter(b => b.getClientRects().length && !/adjunt|attach|micr|voz|voice|model|herram|tool/i.test((b.getAttribute("aria-label") || "") + (b.innerText || "")));
           if (buttons.length) { buttons.at(-1).click(); return; }
         }
         return false;
-      },
-      () => pressEnter(editor)
+      }
     ];
     let sent = false;
     for (const attempt of attempts) {
