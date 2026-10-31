@@ -121,25 +121,15 @@ async function runAI(message, requestedProvider) {
   if (!Number.isInteger(tab.id)) throw new Error("No pude identificar la pestaña de IA.");
   const payload = { type: "QBIT_AI_PROMPT", message: String(message || "").slice(0, 12000) };
 
-  // Chrome "congela" las pestañas en segundo plano: no corre requestAnimationFrame,
-  // así que la página de la IA no habilita el botón Enviar. Por eso la traemos al frente
-  // mientras responde y después volvemos a la pestaña que estaba activa.
-  const [previousTab] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-  await chrome.tabs.update(tab.id, { active: true });
-  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 400));
+  // Enviar a la pestaña existente sin activarla ni cambiar el foco de Chrome.
+  // Así QBIT puede consultar la IA en segundo plano sin sacar al usuario de su pestaña.
   for (let i = 0; i < 40; i++) { // hasta 20 s si Chrome tuvo que recargarla
     const current = await chrome.tabs.get(tab.id).catch(() => null);
     if (!current || current.status === "complete") break;
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  let result;
-  try {
-    result = await sendPromptToTab(tab.id, payload);
-  } finally {
-    if (previousTab?.id && previousTab.id !== tab.id) chrome.tabs.update(previousTab.id, { active: true }).catch(() => {});
-  }
+  const result = await sendPromptToTab(tab.id, payload);
   console.log("[QBIT] Resultado de la pestaña de IA:", result);
   if (!result?.ok) throw new Error(result?.error || "La IA no devolvió una respuesta.");
   return result;
