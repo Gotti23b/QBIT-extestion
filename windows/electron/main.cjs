@@ -638,7 +638,7 @@ async function applyBrightness(target) {
 ipcMain.handle("qbit:brightness-info", async () => {
   const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  if (/^\\d{1,3}$/.test(raw.trim())) return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
+  if (/^\d{1,3}$/.test(raw.trim())) return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
   const fallback = await readPowerPlanBrightness();
   if (fallback !== null) return { ok: true, supported: true, level: fallback, source: "powerplan", message: "El nivel configurado en el plan de energía es " + fallback + "%. Puede no coincidir con el brillo físico actual." };
   return { ok: false, supported: false, message: "Windows no ofrece un control de brillo compatible mediante WMI ni mediante el plan de energía. Puede ser una limitación del controlador o de la pantalla." };
@@ -656,7 +656,7 @@ ipcMain.handle("qbit:brightness-adjust", async (_event, delta) => {
   if (![10, -10].includes(step)) throw new Error("Ajuste de brillo no permitido.");
   let raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  let current = /^\\d{1,3}$/.test(raw.trim()) ? Number(raw.trim()) : await readPowerPlanBrightness();
+  let current = /^\d{1,3}$/.test(raw.trim()) ? Number(raw.trim()) : await readPowerPlanBrightness();
   if (current === null) return { ok: false, supported: false, message: "No pude leer un nivel de brillo para ajustarlo. El controlador puede no ofrecer ese control." };
   const target = Math.max(0, Math.min(100, current + step));
   const method = await applyBrightness(target);
