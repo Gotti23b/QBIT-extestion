@@ -1,7 +1,7 @@
 {
   "name": "qbit-desktop",
-  "version": "1.4.6",
-  "description": "QBIT Desktop 1.4.6 con correcciones de Wi-Fi y brillo",
+  "version": "1.4.7",
+  "description": "QBIT Desktop 1.4.7 con corrección de artifacts y proveedor visible",
   "private": true,
   "main": "windows/electron/main.cjs",
   "scripts": {
