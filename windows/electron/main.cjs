@@ -578,7 +578,7 @@ ipcMain.handle("qbit:media-control", async (_event, action) => {
   const keys = { play_pause: 0xB3, next: 0xB0, previous: 0xB1, stop: 0xB2 };
   const key = keys[String(action || "")];
   if (!key) throw new Error("Acción multimedia no permitida.");
-  const script = "$src='using System; using System.Runtime.InteropServices; public static class QbitMediaKey { [DllImport(\\\"user32.dll\\\")] public static extern void keybd_event(byte bVk,byte bScan,int dwFlags,int dwExtraInfo); }'; Add-Type -TypeDefinition $src; [QbitMediaKey]::keybd_event(" + key + ",0,0,0); [QbitMediaKey]::keybd_event(" + key + ",0,2,0)";
+  const script = "$src='using System; using System.Runtime.InteropServices; public static class QbitMediaKey { [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk,byte bScan,int dwFlags,int dwExtraInfo); }'; Add-Type -TypeDefinition $src; [QbitMediaKey]::keybd_event(" + key + ",0,0,0); [QbitMediaKey]::keybd_event(" + key + ",0,2,0)";
   await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], 7000);
   const labels = { play_pause: "Reproducir o pausar", next: "Siguiente pista", previous: "Pista anterior", stop: "Detener reproducción" };
   return { ok: true, message: labels[action] + "." };
@@ -588,7 +588,7 @@ function resolveKnownUserPath(baseName, relativePath) {
   const getBase = knownFolders[baseKey];
   if (!getBase || !["documentos", "descargas", "escritorio"].includes(baseKey)) throw new Error("Elegí una carpeta permitida: documentos, descargas o escritorio.");
   if (typeof relativePath !== "string" || !relativePath.trim() || relativePath.length > 220) throw new Error("La ruta relativa no es válida.");
-  if (path.isAbsolute(relativePath) || /^[a-z]:/i.test(relativePath) || relativePath.split(/[\\\\/]+/).some(part => part === ".." || part === ".")) throw new Error("Solo se permiten rutas dentro de la carpeta elegida.");
+  if (path.isAbsolute(relativePath) || /^[a-z]:/i.test(relativePath) || relativePath.split(/[\\/]+/).some(part => part === ".." || part === ".")) throw new Error("Solo se permiten rutas dentro de la carpeta elegida.");
   const base = path.resolve(getBase());
   const target = path.resolve(base, relativePath);
   if (!target.startsWith(base + path.sep)) throw new Error("La ruta sale de la carpeta permitida.");

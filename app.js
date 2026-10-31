@@ -58,7 +58,7 @@
     if(name==="search_files"){
       const result=await pc.searchFiles(String(args.query||""));
       if(!result.matches?.length)return {ok:true,message:"No encontré archivos con ese nombre."};
-      return {ok:true,message:"Archivos encontrados:\\n"+result.matches.map(x=>"• "+x.name+" (carpeta: "+x.folder+")").join("\\n")};
+      return {ok:true,message:"Archivos encontrados:\n"+result.matches.map(x=>"• "+x.name+" (carpeta: "+x.folder+")").join("\n")};
     }
     if(name==="clipboard_write")return await pc.writeClipboard(String(args.text??""));
 
