@@ -59,17 +59,8 @@
       editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(text) }));
       editor.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      document.execCommand("delete");
-      const lines = String(text).split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i]) document.execCommand("insertText", false, lines[i]);
-        if (i < lines.length - 1) document.execCommand("insertLineBreak");
-      }
+      // Actualizar el contenteditable sin seleccionarlo ni enfocarlo.
+      editor.textContent = String(text);
       editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(text) }));
     }
   }
