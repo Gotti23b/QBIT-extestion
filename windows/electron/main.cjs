@@ -1,9 +1,11 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, dialog } = require("electron");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const WebSocket = require("ws");
+let autoUpdater = null;
+try { ({ autoUpdater } = require("electron-updater")); } catch { autoUpdater = null; }
 
 let mainWindow;
 let petWindow;
@@ -32,9 +34,70 @@ function sendPetSettings() {
 
 
 function connectorConnected(){return !!connectorSocket&&connectorSocket.readyState===WebSocket.OPEN;}
-function startConnectorServer(){if(connectorServer)return Promise.resolve({ok:true,message:"El conector ya está iniciado."});return new Promise((resolve,reject)=>{const server=new WebSocket.Server({host:"127.0.0.1",port:17614,path:"/qbit-console"});connectorServer=server;server.once("listening",()=>resolve({ok:true,message:"Conector iniciado. Ahora conectá QBIT Extension desde Chrome."}));server.once("error",err=>{connectorServer=null;reject(new Error(err.code==="EADDRINUSE"?"El puerto 17614 ya está ocupado.":err.message));});server.on("connection",(socket,request)=>{if(!/^chrome-extension:\/\/[a-p]{32}$/.test(String(request.headers.origin||""))){socket.close(1008,"Origen no permitido");return;}if(connectorSocket&&connectorSocket.readyState===WebSocket.OPEN)connectorSocket.close();connectorSocket=socket;socket.on("message",raw=>{let msg;try{msg=JSON.parse(String(raw));}catch{return;}if(msg.type==="hello"){socket.send(JSON.stringify({type:"hello_ack"}));return;}if(msg.type==="ai_result"&&typeof msg.id==="string"){const p=connectorPending.get(msg.id);if(!p)return;clearTimeout(p.timer);connectorPending.delete(msg.id);msg.ok&&typeof msg.answer==="string"?p.resolve({answer:msg.answer,provider:String(msg.provider||"IA del navegador")}):p.reject(new Error(String(msg.error||"La IA no pudo responder.")));}});socket.on("close",()=>{if(connectorSocket===socket)connectorSocket=null;for(const [id,p] of connectorPending){clearTimeout(p.timer);p.reject(new Error("La extensión se desconectó."));connectorPending.delete(id);}if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send("qbit:connector-state",{running:!!connectorServer,connected:false});});socket.on("error",()=>{});if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send("qbit:connector-state",{running:true,connected:true});});});}
+function startConnectorServer(){if(connectorServer)return Promise.resolve({ok:true,message:"El conector ya está iniciado."});return new Promise((resolve,reject)=>{const server=new WebSocket.Server({host:"127.0.0.1",port:17614,path:"/qbit-console"});connectorServer=server;server.once("listening",()=>resolve({ok:true,message:"Conector iniciado. Ahora conectá QBIT Extension desde Chrome."}));server.once("error",err=>{connectorServer=null;reject(new Error(err.code==="EADDRINUSE"?"El puerto 17614 ya está ocupado.":err.message));});server.on("connection",(socket,request)=>{if(!/^chrome-extension:\/\/[a-p]{32}$/.test(String(request.headers.origin||""))){socket.close(1008,"Origen no permitido");return;}if(connectorSocket&&connectorSocket.readyState===WebSocket.OPEN)connectorSocket.close();connectorSocket=socket;socket.on("message",raw=>{let msg;try{msg=JSON.parse(String(raw));}catch{return;}if(msg.type==="hello"){socket.send(JSON.stringify({type:"hello_ack"}));const bundled=bundledExtensionVersion();if(bundled&&msg.version&&isNewerVersion(bundled,String(msg.version)))socket.send(JSON.stringify({type:"reload_extension",version:bundled}));return;}if(msg.type==="ai_result"&&typeof msg.id==="string"){const p=connectorPending.get(msg.id);if(!p)return;clearTimeout(p.timer);connectorPending.delete(msg.id);msg.ok&&typeof msg.answer==="string"?p.resolve({answer:msg.answer,provider:String(msg.provider||"IA del navegador")}):p.reject(new Error(String(msg.error||"La IA no pudo responder.")));}});socket.on("close",()=>{if(connectorSocket===socket)connectorSocket=null;for(const [id,p] of connectorPending){clearTimeout(p.timer);p.reject(new Error("La extensión se desconectó."));connectorPending.delete(id);}if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send("qbit:connector-state",{running:!!connectorServer,connected:false});});socket.on("error",()=>{});if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send("qbit:connector-state",{running:true,connected:true});});});}
 function stopConnectorServer(){for(const [id,p] of connectorPending){clearTimeout(p.timer);p.reject(new Error("El conector se desconectó."));connectorPending.delete(id);}if(connectorSocket){try{connectorSocket.close(1000,"Desconectado desde QBIT");}catch{}connectorSocket=null;}if(connectorServer){try{connectorServer.close();}catch{}connectorServer=null;}return {ok:true};}
 function askBrowserAI(message){if(typeof message!=="string"||!message.trim()||message.length>12000)return Promise.reject(new Error("Mensaje no válido."));if(!connectorConnected())return Promise.reject(new Error("La extensión no está conectada. Iniciá el conector y tocá Conectar en el icono de QBIT Extension."));const id=require("node:crypto").randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{connectorPending.delete(id);reject(new Error("La consulta tardó más de cuatro minutos."));},250000);connectorPending.set(id,{resolve,reject,timer});try{connectorSocket.send(JSON.stringify({type:"dispatch_ai",id,provider:"auto",message:message.slice(0,12000)}));}catch(err){clearTimeout(timer);connectorPending.delete(id);reject(err);}});}
+
+// ── Actualizaciones ─────────────────────────────────────────────────────────
+// QBIT baja la versión nueva en segundo plano y pregunta: reiniciar ahora o seguir
+// en esta versión. Nunca se instala sola: si elegís seguir, te vuelve a preguntar
+// la próxima vez que abras QBIT.
+function isNewerVersion(a, b) {
+  const pa = String(a).split(".").map(n => parseInt(n, 10) || 0), pb = String(b).split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) > (pb[i] || 0)) return true; if ((pa[i] || 0) < (pb[i] || 0)) return false; }
+  return false;
+}
+function bundledExtensionVersion() {
+  const dir = app.isPackaged ? path.join(process.resourcesPath, "browser-extension") : path.join(getAppRoot(), "browser-extension");
+  try { return JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8")).version || null; } catch { return null; }
+}
+let updateState = { status: "idle", version: null, message: "" };
+let updatePromptOpen = false;
+function sendUpdateState(patch) {
+  updateState = { ...updateState, ...patch, current: app.getVersion() };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("qbit:update-state", updateState);
+}
+async function askToRestart(info) {
+  if (updatePromptOpen) return;
+  updatePromptOpen = true;
+  try {
+    const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      type: "info",
+      title: "Actualización de QBIT",
+      message: "Hay una versión nueva de QBIT: " + info.version,
+      detail: "Ya está descargada. Podés reiniciar ahora para actualizar o seguir usando esta versión (" + app.getVersion() + ") y actualizar más tarde.",
+      buttons: ["Reiniciar y actualizar", "Seguir en la versión " + app.getVersion()],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+    if (response === 0) {
+      isQuitting = true;
+      stopConnectorServer();
+      setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    }
+  } finally { updatePromptOpen = false; }
+}
+function setupAutoUpdater() {
+  if (!autoUpdater || !app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false; // solo se instala si vos elegís "Reiniciar y actualizar"
+  autoUpdater.on("checking-for-update", () => sendUpdateState({ status: "checking", message: "Buscando actualizaciones…" }));
+  autoUpdater.on("update-available", info => sendUpdateState({ status: "downloading", version: info.version, message: "Descargando la versión " + info.version + "…" }));
+  autoUpdater.on("update-not-available", () => sendUpdateState({ status: "latest", version: null, message: "Tenés la última versión (" + app.getVersion() + ")." }));
+  autoUpdater.on("download-progress", p => sendUpdateState({ status: "downloading", message: "Descargando actualización… " + Math.round(p.percent || 0) + "%" }));
+  autoUpdater.on("update-downloaded", info => { sendUpdateState({ status: "ready", version: info.version, message: "La versión " + info.version + " está lista. Reiniciá cuando quieras." }); askToRestart(info); });
+  autoUpdater.on("error", err => sendUpdateState({ status: "error", message: "No pude buscar actualizaciones: " + (err?.message || err) }));
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+}
+ipcMain.handle("qbit:update-check", async e => {
+  if (!mainWindow || e.sender !== mainWindow.webContents) throw new Error("No autorizado.");
+  if (!autoUpdater || !app.isPackaged) return { status: "dev", current: app.getVersion(), message: "Estás usando QBIT en modo desarrollo (" + app.getVersion() + "). Las actualizaciones funcionan en la versión instalada." };
+  if (updateState.status === "ready") { askToRestart({ version: updateState.version }); return { ...updateState, current: app.getVersion() }; }
+  autoUpdater.checkForUpdates().catch(err => sendUpdateState({ status: "error", message: "No pude buscar actualizaciones: " + (err?.message || err) }));
+  return { status: "checking", current: app.getVersion(), message: "Buscando actualizaciones…" };
+});
+ipcMain.handle("qbit:app-version", () => app.getVersion());
 
 function getAppRoot() {
   const candidates = [path.join(__dirname, ".."), path.join(__dirname, "..", "..")];
@@ -478,6 +541,7 @@ app.whenReady().then(() => {
   createTray();
   createWindow();
   createPetWindow();
+  setupAutoUpdater();
 });
 app.on("before-quit", () => { isQuitting = true; stopConnectorServer(); });
 app.on("window-all-closed", () => {

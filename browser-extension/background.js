@@ -39,6 +39,15 @@ function connectConsole() {
       pending.resolve(message);
       return;
     }
+    if (message.type === "reload_extension") {
+      const target = String(message.version || "");
+      chrome.storage.local.get({ reloadedFor: "" }, ({ reloadedFor }) => {
+        // Solo una vez por versión: si Chrome tiene cargada otra carpeta, no entramos en un bucle.
+        if (reloadedFor === target) { console.warn("[QBIT] QBIT trae la extensión " + target + " pero Chrome carga otra carpeta. Cargá la carpeta browser-extension de QBIT."); return; }
+        chrome.storage.local.set({ reloadedFor: target }, () => { console.log("[QBIT] Recargando la extensión para usar la versión " + target); chrome.runtime.reload(); });
+      });
+      return;
+    }
     if (message.type === "dispatch_ai") {
       console.log("[QBIT] Pedido recibido de QBIT:", message.id);
       chrome.storage.local.get({ provider: "auto" }, settings => {
