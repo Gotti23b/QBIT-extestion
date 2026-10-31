@@ -545,7 +545,7 @@ ipcMain.handle("qbit:automation", async (_event, taskName) => {
 app.whenReady().then(() => {
   loadPetSettings();
   createTray();
-  createWindow(false);
+  createWindow();
   createPetWindow();
   setupAutoUpdater();
 });
