@@ -617,6 +617,34 @@ ipcMain.handle("qbit:display-info", async () => {
   const displays = screen.getAllDisplays().map((d, i) => ({ index: i + 1, width: d.size.width, height: d.size.height, scale: d.scaleFactor, primary: d.id === primary }));
   return { ok: true, message: "Pantallas detectadas:\n" + displays.map(d => "• Pantalla " + d.index + (d.primary ? " (principal)" : "") + ": " + d.width + " × " + d.height + " · escala " + d.scale + "×").join("\n") };
 });
+ipcMain.handle("qbit:brightness-info", async () => {
+  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
+  if (!/^\\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo. Puede pasar con monitores externos o con un controlador de pantalla básico." };
+  return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
+});
+ipcMain.handle("qbit:brightness-set", async (_event, level) => {
+  const target = Number(level);
+  if (!Number.isInteger(target) || target < 0 || target > 100) throw new Error("El brillo tiene que ser un número entero entre 0 y 100.");
+  const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction Stop; if($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
+  const result = (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
+  if (result === "unsupported") return { ok: false, supported: false, message: "Este equipo no expone el control de brillo mediante Windows. Revisá el controlador de pantalla o los controles físicos del monitor." };
+  if (result !== "ok") throw new Error("Windows no pudo aplicar el brillo. Código: " + result);
+  return { ok: true, message: "Brillo establecido al " + target + "%." };
+});
+ipcMain.handle("qbit:brightness-adjust", async (_event, delta) => {
+  const step = Number(delta);
+  if (![10, -10].includes(step)) throw new Error("Ajuste de brillo no permitido.");
+  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
+  if (!/^\\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo." };
+  const target = Math.max(0, Math.min(100, Number(raw.trim()) + step));
+  const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction Stop; if($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
+  const result = (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
+  if (result === "unsupported") return { ok: false, supported: false, message: "Este equipo no expone el control de brillo mediante Windows." };
+  if (result !== "ok") throw new Error("Windows no pudo modificar el brillo. Código: " + result);
+  return { ok: true, message: "Brillo ajustado al " + target + "%." };
+});
 ipcMain.handle("qbit:clipboard-write", async (_event, value) => {
   if (typeof value !== "string" || !value.length || value.length > 20000) throw new Error("El texto debe tener entre 1 y 20.000 caracteres.");
   clipboard.writeText(value);
