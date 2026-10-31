@@ -1,12 +1,14 @@
 name: Build QBIT Desktop for Windows
+# Push a main → arma el instalador y publica la actualización (Release v<version de package.json>).
+# Si no cambiaste "version" en package.json, arma igual pero no publica nada nuevo.
 on:
   push:
-    branches: [integrated-windows-installer]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write  # necesario para publicar el Release con la actualización
 jobs:
   build:
     runs-on: windows-latest
@@ -22,8 +24,14 @@ jobs:
         run: node windows/scripts/create-windows-icon.cjs
       - name: Check JavaScript syntax
         run: npm run check
-      - name: Build NSIS installer
+      - name: Build NSIS installer (sin publicar)
+        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
         run: npm run dist
+      - name: Build and publish release (actualización automática)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: QBIT-Windows-Installer
