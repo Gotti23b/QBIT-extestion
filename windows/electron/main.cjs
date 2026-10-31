@@ -105,7 +105,7 @@ function getAppRoot() {
 }
 
 const PET_SMALL = { width: 116, height: 116 };
-const PET_LARGE = { width: 320, height: 430 };
+const PET_LARGE = { width: 380, height: 560 };
 
 function runWindowsCommand(file, args, timeout = 8000) {
   return new Promise((resolve, reject) => {
