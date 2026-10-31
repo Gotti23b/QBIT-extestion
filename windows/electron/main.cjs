@@ -617,33 +617,52 @@ ipcMain.handle("qbit:display-info", async () => {
   const displays = screen.getAllDisplays().map((d, i) => ({ index: i + 1, width: d.size.width, height: d.size.height, scale: d.scaleFactor, primary: d.id === primary }));
   return { ok: true, message: "Pantallas detectadas:\n" + displays.map(d => "• Pantalla " + d.index + (d.primary ? " (principal)" : "") + ": " + d.width + " × " + d.height + " · escala " + d.scale + "×").join("\n") };
 });
+async function readPowerPlanBrightness() {
+  const script = "$q=powercfg /query SCHEME_CURRENT SUB_VIDEO VIDEONORMALLEVEL 2>$null; $m=[regex]::Matches(($q -join \"\n\"),'0x([0-9a-fA-F]{8})'); if($m.Count -gt 0){[Convert]::ToInt32($m[$m.Count-1].Groups[1].Value,16)}else{'unsupported'}";
+  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 8000).catch(() => "");
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+}
+async function setPowerPlanBrightness(target) {
+  const script = "$ErrorActionPreference='SilentlyContinue'; powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEONORMALLEVEL " + target + "; $ac=$LASTEXITCODE; powercfg /setdcvalueindex SCHEME_CURRENT SUB_VIDEO VIDEONORMALLEVEL " + target + "; powercfg /setactive SCHEME_CURRENT; if($ac -eq 0){'ok'}else{'unsupported'}";
+  return (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
+}
+async function applyBrightness(target) {
+  const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction SilentlyContinue; if($null -eq $r){'unsupported'}elseif($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
+  const wmi = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000).catch(() => "unsupported");
+  if (wmi.trim() === "ok") return "wmi";
+  const fallback = await setPowerPlanBrightness(target).catch(() => "unsupported");
+  if (fallback === "ok") return "powerplan";
+  return wmi.trim().startsWith("failed:") ? wmi.trim() : "unsupported";
+}
 ipcMain.handle("qbit:brightness-info", async () => {
   const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  if (!/^\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo. Puede pasar con monitores externos o con un controlador de pantalla básico." };
-  return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
+  if (/^\\d{1,3}$/.test(raw.trim())) return { ok: true, supported: true, level: Number(raw.trim()), message: "El brillo actual está al " + Number(raw.trim()) + "%." };
+  const fallback = await readPowerPlanBrightness();
+  if (fallback !== null) return { ok: true, supported: true, level: fallback, source: "powerplan", message: "El nivel configurado en el plan de energía es " + fallback + "%. Puede no coincidir con el brillo físico actual." };
+  return { ok: false, supported: false, message: "Windows no ofrece un control de brillo compatible mediante WMI ni mediante el plan de energía. Puede ser una limitación del controlador o de la pantalla." };
 });
 ipcMain.handle("qbit:brightness-set", async (_event, level) => {
   const target = Number(level);
   if (!Number.isInteger(target) || target < 0 || target > 100) throw new Error("El brillo tiene que ser un número entero entre 0 y 100.");
-  const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction Stop; if($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
-  const result = (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
-  if (result === "unsupported") return { ok: false, supported: false, message: "Este equipo no expone el control de brillo mediante Windows. Revisá el controlador de pantalla o los controles físicos del monitor." };
-  if (result !== "ok") throw new Error("Windows no pudo aplicar el brillo. Código: " + result);
-  return { ok: true, message: "Brillo establecido al " + target + "%." };
+  const method = await applyBrightness(target);
+  if (method === "unsupported") return { ok: false, supported: false, message: "Windows no pudo modificar el brillo mediante WMI ni el plan de energía. Revisá el controlador de pantalla." };
+  if (method.startsWith("failed:")) throw new Error("Windows no pudo aplicar el brillo. Código: " + method);
+  return { ok: true, message: "Brillo establecido al " + target + "%." + (method === "powerplan" ? " Se aplicó mediante el plan de energía." : "") };
 });
 ipcMain.handle("qbit:brightness-adjust", async (_event, delta) => {
   const step = Number(delta);
   if (![10, -10].includes(step)) throw new Error("Ajuste de brillo no permitido.");
-  const raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+  let raw = await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported'}else{[string]$m.CurrentBrightness}"], 8000).catch(() => "");
-  if (!/^\d{1,3}$/.test(raw.trim())) return { ok: false, supported: false, message: "Windows o el controlador de pantalla no ofrece un control de brillo compatible en este equipo." };
-  const target = Math.max(0, Math.min(100, Number(raw.trim()) + step));
-  const script = "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $m){'unsupported';exit}; $r=Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=" + target + "} -ErrorAction Stop; if($r.ReturnValue -eq 0){'ok'}else{'failed:'+$r.ReturnValue}";
-  const result = (await runWindowsCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10000)).trim();
-  if (result === "unsupported") return { ok: false, supported: false, message: "Este equipo no expone el control de brillo mediante Windows." };
-  if (result !== "ok") throw new Error("Windows no pudo modificar el brillo. Código: " + result);
-  return { ok: true, message: "Brillo ajustado al " + target + "%." };
+  let current = /^\\d{1,3}$/.test(raw.trim()) ? Number(raw.trim()) : await readPowerPlanBrightness();
+  if (current === null) return { ok: false, supported: false, message: "No pude leer un nivel de brillo para ajustarlo. El controlador puede no ofrecer ese control." };
+  const target = Math.max(0, Math.min(100, current + step));
+  const method = await applyBrightness(target);
+  if (method === "unsupported") return { ok: false, supported: false, message: "Windows no pudo modificar el brillo mediante WMI ni el plan de energía." };
+  if (method.startsWith("failed:")) throw new Error("Windows no pudo modificar el brillo. Código: " + method);
+  return { ok: true, message: "Brillo ajustado al " + target + "%." + (method === "powerplan" ? " Se aplicó mediante el plan de energía." : "") };
 });
 
 const qbitTimers=new Map();
@@ -655,7 +674,20 @@ ipcMain.handle("qbit:cpu-usage",async()=>{const raw=await runWindowsCommand("pow
 ipcMain.handle("qbit:ram-usage",async()=>{const raw=await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command","$o=Get-CimInstance Win32_OperatingSystem;$t=[math]::Round($o.TotalVisibleMemorySize/1MB,2);$f=[math]::Round($o.FreePhysicalMemory/1MB,2);@{total=$t;free=$f;used=[math]::Round($t-$f,2);percent=[math]::Round((($t-$f)/$t)*100,1)}|ConvertTo-Json -Compress"],8000);const x=JSON.parse(raw);return{ok:true,message:"RAM: "+x.used+" GB usados de "+x.total+" GB ("+x.percent+"%). Libres: "+x.free+" GB."};});
 ipcMain.handle("qbit:disk-usage",async()=>{const raw=await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command","Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,@{N='TotalGB';E={[math]::Round($_.Size/1GB,1)}},@{N='FreeGB';E={[math]::Round($_.FreeSpace/1GB,1)}} | ConvertTo-Json -Compress"],9000);let a=JSON.parse(raw||"[]");if(!Array.isArray(a))a=[a];return{ok:true,message:"Espacio en discos:\n"+a.map(x=>"• "+x.DeviceID+" · "+(x.TotalGB-x.FreeGB).toFixed(1)+" GB usados de "+x.TotalGB+" GB · "+x.FreeGB+" GB libres").join("\n")};});
 ipcMain.handle("qbit:night-light-settings",async()=>{await shell.openExternal("ms-settings:nightlight");return{ok:true,message:"Abrí la configuración de Luz nocturna. Activala o desactivala desde ese panel; Windows no ofrece un interruptor universal compatible para automatizarlo desde QBIT."};});
-ipcMain.handle("qbit:toggle-wifi",async(_e,action)=>{if(!["on","off"].includes(action))throw new Error("Usá action on u off.");const on=action==="on";const script="$a=Get-NetAdapter | Where-Object {$_.Name -match 'Wi-?Fi|WLAN|Wireless' -or $_.InterfaceDescription -match 'Wi-?Fi|WLAN|Wireless'} | Select-Object -First 1;if($null -eq $a){'missing';exit};if("+String(on).toLowerCase()+"){Enable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop}else{Disable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop};'ok'";let r;try{r=(await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command",script],12000)).trim();}catch(e){throw new Error("Windows no pudo cambiar el Wi-Fi. Puede requerir permisos de administrador. "+e.message);}if(r==="missing")throw new Error("No encontré un adaptador Wi-Fi.");return{ok:true,message:on?"Wi-Fi activado.":"Wi-Fi desactivado."};});
+ipcMain.handle("qbit:toggle-wifi",async(_e,action)=>{
+  const value=String(action??"").trim().toLocaleLowerCase("es");
+  const onValues=new Set(["on","activar","activá","activa","encender","encendé","prender","prendé","habilitar","habilitá","enable","enabled","true","1","sí","si"]);
+  const offValues=new Set(["off","desactivar","desactivá","desactiva","apagar","apagá","disable","disabled","false","0","no"]);
+  if(!onValues.has(value)&&!offValues.has(value))throw new Error("Indicá la acción: 'on' para activar o 'off' para desactivar el Wi-Fi.");
+  const on=onValues.has(value);
+  const script="$ErrorActionPreference='Stop';$a=Get-NetAdapter -Physical | Where-Object {$_.Name -match 'Wi-?Fi|WLAN|Wireless' -or $_.InterfaceDescription -match 'Wi-?Fi|WLAN|Wireless'} | Select-Object -First 1;if($null -eq $a){'missing';exit};if("+String(on).toLowerCase()+"){Enable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop}else{Disable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop};'ok'";
+  let r;
+  try{r=(await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command",script],15000)).trim();}
+  catch(e){throw new Error("Windows no pudo cambiar el Wi-Fi. Verificá que QBIT tenga permisos de administrador. "+e.message);}
+  if(r==="missing")throw new Error("No encontré un adaptador Wi-Fi físico. Revisá el nombre del adaptador en Administrador de dispositivos.");
+  if(r!=="ok")throw new Error("Windows no confirmó el cambio del Wi-Fi.");
+  return{ok:true,message:on?"Wi-Fi activado.":"Wi-Fi desactivado."};
+});
 ipcMain.handle("qbit:minimize-all",async()=>{await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command","(New-Object -ComObject Shell.Application).MinimizeAll()"],7000);return{ok:true,message:"Minimicé todas las ventanas."};});
 ipcMain.handle("qbit:restore-all",async()=>{await runWindowsCommand("powershell.exe",["-NoProfile","-NonInteractive","-Command","(New-Object -ComObject Shell.Application).UndoMinimizeAll()"],7000);return{ok:true,message:"Restauré las ventanas minimizadas."};});
 function validateProcessQuery(q){if(typeof q!=="string"||!q.trim()||q.length>80||!/^[\p{L}\p{N} ._-]+$/u.test(q.trim()))throw new Error("Indicá un nombre de aplicación válido.");return q.trim();}
