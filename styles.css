@@ -65,7 +65,6 @@ body.qbit-desktop .agent-tools{display:block!important;position:relative}
   .app-shell{grid-template-columns:190px minmax(0,1fr);gap:12px}
   .sidebar{padding:13px 9px}
   .workspace .layout{grid-template-columns:minmax(0,1fr)}
-  .workspace .layout>aside{display:none}
 }
 @media(max-width:620px){
   .app-shell{grid-template-columns:1fr;min-height:0}
