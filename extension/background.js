@@ -113,7 +113,7 @@ async function runAI(message, requestedProvider) {
   return result;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "QBIT_DESKTOP_CONTROL_STATUS") {
     chrome.storage.local.get({qbitDesktopControlEnabled:false},s=>sendResponse({enabled:!!s.qbitDesktopControlEnabled,connected:!!socket&&socket.readyState===WebSocket.OPEN}));return true;
   }
@@ -123,7 +123,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "QBIT_WEB_AI_PROMPT") {
     if(!QBIT_WEB_ORIGINS.includes(sender?.origin)||!sender?.tab?.id){sendResponse({ok:false,error:"Origen de QBIT no autorizado."});return false;}
-    runAI(String(message.message||"").slice(0,12000),"auto").then(sendResponse,error=>sendResponse({ok:false,error:error?.message||String(error)}));return true;
+    chrome.storage.local.get({qbitDesktopControlEnabled:false},settings=>{
+      const userMessage=String(message.message||"").slice(0,12000);
+      const guide=settings.qbitDesktopControlEnabled ? "[Instrucciones de QBIT]\nSos QBIT, un asistente conectado a QBIT Desktop para Windows. Respondé en español.\nSi el usuario pide una acción en su PC, agregá al final un único bloque de código qbit con JSON, por ejemplo:\n\`\`\`qbit\n{\"artifact\":\"volume\",\"args\":{\"action\":\"up\"}}\n\`\`\`\nArtifacts disponibles: open_anything {\"query\":\"nombre\"}; system_info {}; volume {\"action\":\"up|down|mute\"} o {\"action\":\"set\",\"level\":0-100}; web_search {\"query\":\"texto\"}; time_date {}; automation {}; open_settings {\"page\":\"system|display|sound|network|wifi|bluetooth|apps|personalization|updates|storage|notifications|privacy\"}; lock_pc {}; battery_info {}; network_info {}; display_info {}; brightness_info {}; brightness_set {\"level\":0-100}; brightness_up {}; brightness_down {}; media_control {\"action\":\"play_pause|next|previous|stop\"}; create_folder {\"base\":\"documentos|descargas|escritorio\",\"path\":\"Carpeta nueva\"}; create_file {\"base\":\"documentos|descargas|escritorio\",\"path\":\"nota.txt\",\"content\":\"texto\"}; search_files {\"query\":\"nombre\"}; clipboard_write {\"text\":\"texto\"}; empty_recycle_bin {}; get_processes {}; cpu_usage {}; ram_usage {}; disk_usage {}; toggle_night_light {}; toggle_wifi {\"action\":\"on|off\"}; minimize_all {}; restore_all {}; focus_app {\"query\":\"aplicación\"}; close_window {\"query\":\"aplicación\"}; open_file_location {\"query\":\"archivo\"}; get_file_info {\"query\":\"archivo\"}; zip_files {\"query\":\"archivo\"}; unzip_file {\"query\":\"archivo ZIP\"}; read_text_file {\"query\":\"archivo de texto\"}; show_notification {\"title\":\"Título\",\"message\":\"Texto\"}; set_timer {\"seconds\":60,\"label\":\"Temporizador\"}; cancel_timer {\"id\":\"default\"}; open_calculator {}; open_notepad {}; open_task_manager {}; volume_info {}; volume_set {\"level\":0-100}; audio_mute {}.\nUsá el bloque solo cuando el usuario haya pedido una acción concreta. Nunca inventes que una acción se ejecutó.\n\nMensaje del usuario:\n" : "";
+      runAI(guide+userMessage,"auto").then(sendResponse,error=>sendResponse({ok:false,error:error?.message||String(error)}));
+    });return true;
   }
   if (message?.type === "QBIT_DESKTOP_ARTIFACT") {
     if(!QBIT_WEB_ORIGINS.includes(sender?.origin)||!sender?.tab?.id){sendResponse({ok:false,error:"Origen de QBIT no autorizado."});return false;}
