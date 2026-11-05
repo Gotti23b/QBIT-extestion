@@ -31,26 +31,11 @@
   }
 
   function installConsoleButton() {
-    const header = document.querySelector("header.top");
-    if (!header || document.getElementById("qbitConsoleConnect")) return;
-    const button = document.createElement("button");
-    button.id = "qbitConsoleConnect";
-    button.type = "button";
-    button.className = "small primary";
-    button.textContent = "Conectar IA";
-    button.title = "Abrir QBIT Console para conectar este chat con la IA del navegador";
-    button.addEventListener("click", () => { location.href = "qbit-console://start"; });
-    header.append(button);
-    chrome.runtime.sendMessage({ type: "QBIT_CONSOLE_STATUS" }).then(status => updateConsoleButton(status?.connected)).catch(() => updateConsoleButton(false));
+    document.getElementById("qbitConsoleConnect")?.remove();
   }
 
-  function updateConsoleButton(connected) {
-    const button = document.getElementById("qbitConsoleConnect");
-    if (!button) return;
-    button.textContent = connected ? "Consola conectada" : "Conectar IA";
-    button.disabled = !!connected;
-    button.classList.toggle("primary", !connected);
-    button.title = connected ? "QBIT Console está conectada; usá una pestaña de IA y escribí en QBIT." : "Abrir QBIT Console para conectar este chat con la IA del navegador";
+  function updateConsoleButton() {
+    document.getElementById("qbitConsoleConnect")?.remove();
   }
 
   function saveAnswerInHistory(answer) {
