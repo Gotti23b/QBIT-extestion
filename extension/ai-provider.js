@@ -225,7 +225,7 @@
       if (attempt() === false) continue;
       if (await waitSent(editor, previousCount)) { sent = true; break; }
     }
-    if (!sent) throw new Error(`Escribí el mensaje en ${provider} pero no pude enviarlo. Dejá esa pestaña visible e intentá de nuevo.`);
+    if (!sent) throw new Error(`Escribí el mensaje en ${provider}, pero el proveedor no permitió enviarlo desde segundo plano. Puede requerir que abras esa pestaña; QBIT no la va a traer al frente automáticamente.`);
 
     const startedAt = Date.now();
     let answer = "";
