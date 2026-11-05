@@ -20,7 +20,7 @@
     if(!calls.length)return original;
     const results=[];
     for(const call of calls.slice(0,3)){
-      try{const r=await chrome.runtime.sendMessage({type:"QBIT_DESKTOP_ARTIFACT",call});results.push(r?.ok?"✓ "+String(r.result||"Artifact ejecutado."):"⚠️ "+String(r?.error||"No se pudo ejecutar el Artifact."));}
+      try{const r=await chrome.runtime.sendMessage({type:"QBIT_DESKTOP_ARTIFACT",call});results.push(r?.ok?"🖥️ "+String(r.result||"Artifact ejecutado."):"⚠️ "+String(r?.error||"No se pudo ejecutar el Artifact."));}
       catch(error){results.push("⚠️ "+(error?.message||"No se pudo conectar con QBIT Desktop."));}
     }
     return [clean,...results].filter(Boolean).join("\n\n");
