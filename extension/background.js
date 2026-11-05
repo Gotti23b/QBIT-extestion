@@ -11,9 +11,11 @@ const PROVIDERS = {
 let socket = null;
 let retryDelay = 1000;
 const waiting = new Map();
+const QBIT_WEB_URLS=["https://gotti23b.github.io/QBIT/*","https://qbit.uno/*","https://www.qbit.uno/*"];
+const QBIT_WEB_ORIGINS=["https://gotti23b.github.io","https://qbit.uno","https://www.qbit.uno"];
 
 async function broadcastConsoleStatus() {
-  const tabs = await chrome.tabs.query({ url: "https://gotti23b.github.io/QBIT/*" });
+  const tabs = await chrome.tabs.query({ url: QBIT_WEB_URLS });
   for (const tab of tabs) if (tab.id) chrome.tabs.sendMessage(tab.id, { type: "QBIT_CONSOLE_STATUS_CHANGED", connected: !!socket && socket.readyState === WebSocket.OPEN }).catch(() => {});
 }
 
@@ -30,7 +32,7 @@ function connectConsole() {
   socket.onmessage = event => {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
-    if (message.type === "result" && waiting.has(message.id)) {
+    if ((message.type === "result" || message.type === "web_artifact_result") && waiting.has(message.id)) {
       const pending = waiting.get(message.id);
       waiting.delete(message.id);
       clearTimeout(pending.timer);
@@ -112,6 +114,27 @@ async function runAI(message, requestedProvider) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "QBIT_DESKTOP_CONTROL_STATUS") {
+    chrome.storage.local.get({qbitDesktopControlEnabled:false},s=>sendResponse({enabled:!!s.qbitDesktopControlEnabled,connected:!!socket&&socket.readyState===WebSocket.OPEN}));return true;
+  }
+  if (message?.type === "QBIT_DESKTOP_CONTROL_SET") {
+    if(!QBIT_WEB_ORIGINS.includes(sender?.origin)||!sender?.tab?.id){sendResponse({ok:false,error:"Origen de QBIT no autorizado."});return false;}
+    chrome.storage.local.set({qbitDesktopControlEnabled:!!message.enabled},()=>sendResponse({ok:true,enabled:!!message.enabled,connected:!!socket&&socket.readyState===WebSocket.OPEN}));return true;
+  }
+  if (message?.type === "QBIT_WEB_AI_PROMPT") {
+    if(!QBIT_WEB_ORIGINS.includes(sender?.origin)||!sender?.tab?.id){sendResponse({ok:false,error:"Origen de QBIT no autorizado."});return false;}
+    runAI(String(message.message||"").slice(0,12000),"auto").then(sendResponse,error=>sendResponse({ok:false,error:error?.message||String(error)}));return true;
+  }
+  if (message?.type === "QBIT_DESKTOP_ARTIFACT") {
+    if(!QBIT_WEB_ORIGINS.includes(sender?.origin)||!sender?.tab?.id){sendResponse({ok:false,error:"Origen de QBIT no autorizado."});return false;}
+    chrome.storage.local.get({qbitDesktopControlEnabled:false},s=>{
+      if(!s.qbitDesktopControlEnabled){sendResponse({ok:false,error:"Activá Control PC en QBIT Web para ejecutar Artifacts."});return;}
+      if(!socket||socket.readyState!==WebSocket.OPEN){sendResponse({ok:false,error:"QBIT Desktop no está conectado. Abrí QBIT Desktop y verificá la extensión."});return;}
+      const id=crypto.randomUUID();const timer=setTimeout(()=>{waiting.delete(id);sendResponse({ok:false,error:"QBIT Desktop tardó demasiado en responder."});},125000);
+      waiting.set(id,{resolve:r=>sendResponse({ok:!!r.ok,result:String(r.result||""),error:r.error||""}),reject:e=>sendResponse({ok:false,error:e?.message||String(e)}),timer});
+      try{socket.send(JSON.stringify({type:"web_artifact_request",id,call:message.call}));}catch(error){clearTimeout(timer);waiting.delete(id);sendResponse({ok:false,error:error?.message||String(error)});}
+    });return true;
+  }
   if (message?.type === "QBIT_CONSOLE_PROMPT") {
     sendConsolePrompt(String(message.message || "").slice(0, 12000))
       .then(sendResponse, error => sendResponse({ ok: false, error: error?.message || String(error) }));
@@ -124,7 +147,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.action.onClicked.addListener(async () => {
-  const tabs = await chrome.tabs.query({ url: "https://gotti23b.github.io/QBIT/*" });
+  const tabs = await chrome.tabs.query({ url: QBIT_WEB_URLS });
   const tab = tabs[0];
   if (tab?.id) await chrome.tabs.update(tab.id, { active: true });
   else await chrome.tabs.create({ url: "https://gotti23b.github.io/QBIT/" });
