@@ -22,3 +22,18 @@ La consola solo escucha en `127.0.0.1:17614`. También podés iniciarla con `sta
 QBIT Desktop y la consola de PowerShell usan el mismo puerto (`127.0.0.1:17614`). Usá solo una de las dos a la vez.
 
 La consola de PowerShell solo reenvía texto: no ejecuta comandos ni lo que escribe la IA.
+
+
+## Controlar QBIT Desktop desde QBIT Web
+
+La extensión ahora agrega el puente para que QBIT Web pueda ejecutar los Artifacts de QBIT Desktop:
+
+1. Abrí QBIT Desktop. El puente local se inicia automáticamente.
+2. Cargá la carpeta `extension` de este repositorio en Chrome desde `chrome://extensions` (Modo de desarrollador → Cargar descomprimida).
+3. Abrí QBIT Web e iniciá sesión.
+4. Activá el interruptor **Control PC** en la barra superior.
+5. Abrí una pestaña de ChatGPT, Gemini, Claude, DeepSeek, Qwen, Arena.ai o Meta AI e iniciá sesión. QBIT usará esa IA para responder y podrá enviar los bloques `qbit` a QBIT Desktop.
+
+Las acciones que requieren autorización siguen mostrando la confirmación de QBIT Desktop. Si Desktop está cerrado o la extensión no está conectada, el control aparecerá desconectado y no se ejecutarán acciones.
+
+Dominios compatibles: `gotti23b.github.io/QBIT`, `qbit.uno` y `www.qbit.uno`.
