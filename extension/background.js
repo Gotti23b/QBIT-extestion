@@ -89,25 +89,23 @@ async function runAI(message, requestedProvider) {
   const urlPatterns = providerKey === "auto" ? Object.values(PROVIDERS).flat() : PROVIDERS[providerKey];
   if (!urlPatterns) throw new Error("No reconozco ese proveedor de IA.");
   const tabs = await chrome.tabs.query({ url: urlPatterns });
-  if (!tabs.length) throw new Error("Abrí e iniciá sesión en una pestaña de ChatGPT o Arena.ai. También podés usar Gemini, Claude, DeepSeek, Qwen o Meta AI.");
-  const tab = tabs.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
-  // Traemos la pestaña de IA al frente mientras responde (en segundo plano Chrome
-  // la frena y no habilita el botón Enviar) y después volvemos a la anterior.
-  const [previousTab] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-  await chrome.tabs.update(tab.id, { active: true });
-  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 400));
-  for (let i = 0; i < 40; i++) { // hasta 20 s si Chrome tuvo que recargarla
-    const current = await chrome.tabs.get(tab.id).catch(() => null);
-    if (!current || current.status === "complete") break;
-    await new Promise(resolve => setTimeout(resolve, 500));
+  if (!tabs.length) throw new Error("Abrí e iniciá sesión en una pestaña de ChatGPT, Arena.ai, Gemini, Claude, DeepSeek, Qwen o Meta AI. QBIT intentará usarla en segundo plano, sin traerla al frente.");
+  // Elegimos la pestaña disponible más recientemente, pero nunca la activamos
+  // ni enfocamos su ventana: QBIT no debe robarle el foco al usuario.
+  const tab = tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+  if (tab.status !== "complete") {
+    const until = Date.now() + 20000;
+    while (Date.now() < until) {
+      const current = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!current) throw new Error("La pestaña del proveedor se cerró.");
+      if (current.status === "complete") break;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
-  let result;
-  try {
-    result = await chrome.tabs.sendMessage(tab.id, { type: "QBIT_AI_PROMPT", message: String(message || "").slice(0, 12000) });
-  } finally {
-    if (previousTab?.id && previousTab.id !== tab.id) chrome.tabs.update(previousTab.id, { active: true }).catch(() => {});
-  }
+  // Enviamos el mensaje al content script en segundo plano. Algunos proveedores
+  // pueden limitar páginas ocultas; en ese caso informamos el error sin cambiar
+  // de pestaña ni llevar la ventana al frente.
+  const result = await chrome.tabs.sendMessage(tab.id, { type: "QBIT_AI_PROMPT", message: String(message || "").slice(0, 12000) });
   console.log("[QBIT] Resultado de la pestaña de IA:", result);
   if (!result?.ok) throw new Error(result?.error || "La IA no devolvió una respuesta.");
   return result;
